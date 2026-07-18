@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.env
+board-state.json
+recruit-state.json
+report-button-state.json
+birthday-state.json
+automod-state.json
+app-state.json
+recruit-app-state.json
+stats-state.json
+reminders-state.json
+rules-state.json
+schedule-state.json
