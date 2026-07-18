@@ -1700,6 +1700,14 @@ async def refresh_report_button_message() -> None:
         except Exception:
             message = None
     if message is None:
+        try:
+            async for msg in channel.history(limit=50, oldest_first=False):
+                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                    message = msg
+                    break
+        except Exception:
+            pass
+    if message is None:
         message = await channel.send(embed=embed, view=view)
     else:
         await message.edit(embed=embed, view=view)
@@ -1754,6 +1762,14 @@ async def refresh_birthday_board() -> None:
             message = await channel.fetch_message(int(state['message_id']))
         except Exception:
             message = None
+    if message is None:
+        try:
+            async for msg in channel.history(limit=50, oldest_first=False):
+                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                    message = msg
+                    break
+        except Exception:
+            pass
     if message is None:
         message = await channel.send(embed=embed, view=view)
     else:
@@ -1849,6 +1865,14 @@ async def refresh_board() -> None:
             except Exception:
                 message = None
         if message is None:
+            try:
+                async for msg in channel.history(limit=50, oldest_first=False):
+                    if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                        message = msg
+                        break
+            except Exception:
+                pass
+        if message is None:
             message = await channel.send(embed=embed, view=view)
         else:
             await message.edit(embed=embed, view=view)
@@ -1860,11 +1884,21 @@ async def refresh_recruit_board() -> None:
         embed, view = await build_recruit_payload(channel.guild)
         state = read_recruit_state()
         message = None
+        # Try to find message by stored ID
         if state.get('board_message_id'):
             try:
                 message = await channel.fetch_message(int(state['board_message_id']))
             except Exception:
                 message = None
+        # If not found, search channel for bot's last embed message with this title
+        if message is None:
+            try:
+                async for msg in channel.history(limit=50, oldest_first=False):
+                    if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                        message = msg
+                        break
+            except Exception:
+                pass
         if message is None:
             message = await channel.send(embed=embed, view=view)
         else:
@@ -1939,6 +1973,14 @@ async def refresh_automod_board() -> None:
         except Exception:
             pass
     if message is None:
+        try:
+            async for msg in channel.history(limit=50, oldest_first=False):
+                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                    message = msg
+                    break
+        except Exception:
+            pass
+    if message is None:
         message = await channel.send(embed=embed, view=view)
     else:
         await message.edit(embed=embed, view=view)
@@ -1980,6 +2022,15 @@ async def refresh_application_board() -> None:
             pass
 
     if message is None:
+        try:
+            async for msg in channel.history(limit=50, oldest_first=False):
+                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                    message = msg
+                    break
+        except Exception:
+            pass
+
+    if message is None:
         message = await channel.send(embed=embed, view=view)
     else:
         await message.edit(embed=embed, view=view)
@@ -2017,6 +2068,14 @@ async def refresh_recruit_app_banner() -> None:
             message = await channel.fetch_message(int(state['banner_message_id']))
         except Exception:
             message = None
+    if message is None:
+        try:
+            async for msg in channel.history(limit=50, oldest_first=False):
+                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                    message = msg
+                    break
+        except Exception:
+            pass
     if message is None:
         message = await channel.send(embed=embed, view=view)
     else:
@@ -2076,6 +2135,15 @@ async def refresh_admin_panel() -> None:
             write_admin_panel_state(state)
         except discord.HTTPException as exc:
             print(f'[ADMIN] Failed to fetch panel message: {exc}')
+
+    if message is None:
+        try:
+            async for msg in channel.history(limit=50, oldest_first=False):
+                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
+                    message = msg
+                    break
+        except Exception:
+            pass
 
     if message is None:
         message = await channel.send(embed=embed, view=view)
