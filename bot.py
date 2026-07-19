@@ -1089,7 +1089,6 @@ class FamilyBot(commands.Bot):
         self.add_view(RecruitView())
         self.add_view(RecruitReportButtonView())
         self.add_view(BirthdayButtonView())
-        self.add_view(AutomodConfigView())
         self.add_view(ApplicationCreateView())
         self.add_view(TicketAdminView())
         self.add_view(RecruitAppBannerView())
