@@ -1094,12 +1094,7 @@ class FamilyBot(commands.Bot):
         self.add_view(RecruitAppBannerView())
         self.add_view(AdminPanelView())
         self.add_view(LeaderboardView())
-        guild_obj = discord.Object(id=int(GUILD_ID)) if GUILD_ID else None
-        if guild_obj is not None:
-            self.tree.copy_global_to(guild=guild_obj)
-            await self.tree.sync(guild=guild_obj)
-        else:
-            await self.tree.sync()
+        await self.tree.sync()
 
 bot = FamilyBot()
 
