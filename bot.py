@@ -44,7 +44,7 @@ STATE_FILE = Path(__file__).with_name('board-state.json')
 RECRUIT_STATE_FILE = Path(__file__).with_name('recruit-state.json')
 REPORT_BUTTON_STATE_FILE = Path(__file__).with_name('report-button-state.json')
 BIRTHDAY_STATE_FILE = Path(__file__).with_name('birthday-state.json')
-AUTOMOD_STATE_FILE = Path(__file__).with_name('automod-state.json')
+
 APP_STATE_FILE = Path(__file__).with_name('app-state.json')
 RECRUIT_APP_STATE_FILE = Path(__file__).with_name('recruit-app-state.json')
 STATS_STATE_FILE = Path(__file__).with_name('stats-state.json')
@@ -77,7 +77,7 @@ BIRTHDAY_BOARD_CHANNEL_ID = int(os.getenv('BIRTHDAY_BOARD_CHANNEL_ID', '0'))
 BIRTHDAY_GREETING_CHANNEL_ID = int(os.getenv('BIRTHDAY_GREETING_CHANNEL_ID', '0'))
 LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID', '0'))
 WELCOME_CHANNEL_ID = int(os.getenv('WELCOME_CHANNEL_ID', '1342073128112623666'))
-AUTOMOD_CHANNEL_ID = int(os.getenv('AUTOMOD_CHANNEL_ID', '0'))
+
 APP_CREATE_CHANNEL_ID = int(os.getenv('APP_CREATE_CHANNEL_ID', '0'))
 APP_LOG_CHANNEL_ID = int(os.getenv('APP_LOG_CHANNEL_ID', '0'))
 APP_CATEGORY_ID = int(os.getenv('APP_CATEGORY_ID', '0'))
@@ -238,214 +238,6 @@ class RecruitView(discord.ui.View):
         await interaction.response.send_message('Обновляю плашку рекрутов...', ephemeral=True)
         asyncio.create_task(send_log('🔄 Обновление рекрутов', f'{interaction.user.mention} нажал кнопку **Обновить** (рекруты)', color=0x3B82F6, user=interaction.user))
         asyncio.create_task(refresh_recruit_board_safely())
-
-# --------------- Автомодерация (Dyno-style) ---------------
-
-class AutomodSpamModal(discord.ui.Modal, title='⚙️ Анти-Спам'):
-    spam_m = discord.ui.TextInput(label='Макс. сообщений', placeholder='5')
-    spam_s = discord.ui.TextInput(label='За сколько секунд', placeholder='5')
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            sm, ss = int(self.spam_m.value), int(self.spam_s.value)
-        except ValueError:
-            await interaction.response.send_message('Нужно ввести числа.', ephemeral=True)
-            return
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['modules']['spam']['limit'] = sm
-            state['modules']['spam']['interval'] = ss
-            write_automod_state(state)
-        await interaction.response.send_message('✅ Настройки спама сохранены!', ephemeral=True)
-        asyncio.create_task(refresh_automod_board_safely())
-
-class AutomodImageModal(discord.ui.Modal, title='⚙️ Анти-Картинки'):
-    img_m = discord.ui.TextInput(label='Макс. вложений', placeholder='3')
-    img_s = discord.ui.TextInput(label='За сколько секунд', placeholder='10')
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            im, is_ = int(self.img_m.value), int(self.img_s.value)
-        except ValueError:
-            await interaction.response.send_message('Нужно ввести числа.', ephemeral=True)
-            return
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['modules']['images']['limit'] = im
-            state['modules']['images']['interval'] = is_
-            write_automod_state(state)
-        await interaction.response.send_message('✅ Настройки картинок сохранены!', ephemeral=True)
-        asyncio.create_task(refresh_automod_board_safely())
-
-class AutomodContentModal(discord.ui.Modal, title='⚙️ Контент'):
-    emojis = discord.ui.TextInput(label='Макс. эмодзи в сообщении', placeholder='5')
-    mentions = discord.ui.TextInput(label='Макс. упоминаний', placeholder='3')
-    caps = discord.ui.TextInput(label='Макс. % заглавных букв', placeholder='70')
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            em, mn, cp = int(self.emojis.value), int(self.mentions.value), int(self.caps.value)
-        except ValueError:
-            await interaction.response.send_message('Нужно ввести числа.', ephemeral=True)
-            return
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['modules']['emoji']['limit'] = em
-            state['modules']['mentions']['limit'] = mn
-            state['modules']['caps']['percent'] = cp
-            write_automod_state(state)
-        await interaction.response.send_message('✅ Настройки контента сохранены!', ephemeral=True)
-        asyncio.create_task(refresh_automod_board_safely())
-
-class AutomodBadwordsModal(discord.ui.Modal, title='⚙️ Анти-Мат'):
-    words = discord.ui.TextInput(label='Слова через запятую', style=discord.TextStyle.paragraph, required=False)
-    async def on_submit(self, interaction: discord.Interaction):
-        w_list = sorted(set(w.strip().lower() for w in self.words.value.split(',') if w.strip()))
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['modules']['badwords']['words'] = w_list
-            write_automod_state(state)
-        await interaction.response.send_message(f'✅ Сохранено слов: **{len(w_list)}**', ephemeral=True)
-        asyncio.create_task(refresh_automod_board_safely())
-
-class AutomodPunishModal(discord.ui.Modal, title='⚖️ Система наказаний'):
-    w1 = discord.ui.TextInput(label='1-е нарушение', placeholder='warn')
-    w2 = discord.ui.TextInput(label='2-е нарушение', placeholder='mute')
-    w3 = discord.ui.TextInput(label='3-е нарушение', placeholder='kick')
-    w4 = discord.ui.TextInput(label='4-е нарушение', placeholder='ban')
-    mute_min = discord.ui.TextInput(label='Мут (минут)', placeholder='10')
-    async def on_submit(self, interaction: discord.Interaction):
-        valid = {'warn', 'mute', 'kick', 'ban', 'none'}
-        actions = []
-        for field in [self.w1, self.w2, self.w3, self.w4]:
-            v = field.value.strip().lower()
-            if v not in valid:
-                await interaction.response.send_message(f'Недопустимое действие: `{v}`. Допустимые: warn, mute, kick, ban, none', ephemeral=True)
-                return
-            actions.append(v)
-        try:
-            mute = int(self.mute_min.value)
-        except ValueError:
-            await interaction.response.send_message('Длительность мута — число.', ephemeral=True)
-            return
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['punishment']['actions'] = actions
-            state['punishment']['mute_minutes'] = mute
-            write_automod_state(state)
-        await interaction.response.send_message('✅ Наказания сохранены!', ephemeral=True)
-        asyncio.create_task(refresh_automod_board_safely())
-
-class AutomodWordsModal(discord.ui.Modal, title='⚙️ Исключения'):
-    whitelist_channels = discord.ui.TextInput(label='ID каналов через запятую', style=discord.TextStyle.paragraph, required=False)
-    exempt_roles = discord.ui.TextInput(label='ID ролей через запятую', style=discord.TextStyle.paragraph, required=False)
-    async def on_submit(self, interaction: discord.Interaction):
-        channels = [int(x.strip()) for x in self.whitelist_channels.value.split(',') if x.strip().isdigit()]
-        roles = [int(x.strip()) for x in self.exempt_roles.value.split(',') if x.strip().isdigit()]
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['whitelist_channels'] = channels
-            state['exempt_roles'] = roles
-            write_automod_state(state)
-        await interaction.response.send_message('✅ Исключения сохранены!', ephemeral=True)
-        asyncio.create_task(refresh_automod_board_safely())
-
-
-class AutomodConfigView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    # --- Строка 0: Тоглы ---
-    @discord.ui.button(label='🔴 Спам', style=discord.ButtonStyle.secondary, custom_id='am_tog_spam', row=0)
-    async def toggle_spam(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'spam', button, 'Спам')
-
-    @discord.ui.button(label='🔴 Мат', style=discord.ButtonStyle.secondary, custom_id='am_tog_bw', row=0)
-    async def toggle_badwords(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'badwords', button, 'Мат')
-
-    @discord.ui.button(label='🔴 Инвайты', style=discord.ButtonStyle.secondary, custom_id='am_tog_inv', row=0)
-    async def toggle_invites(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'invites', button, 'Инвайты')
-
-    @discord.ui.button(label='🔴 Эмодзи', style=discord.ButtonStyle.secondary, custom_id='am_tog_emo', row=0)
-    async def toggle_emojis(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'emoji', button, 'Эмодзи')
-
-    @discord.ui.button(label='🔴 Пинги', style=discord.ButtonStyle.secondary, custom_id='am_tog_men', row=0)
-    async def toggle_mentions(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'mentions', button, 'Пинги')
-
-    # --- Строка 1: Тоглы ---
-    @discord.ui.button(label='🔴 Картинки', style=discord.ButtonStyle.secondary, custom_id='am_tog_img', row=1)
-    async def toggle_images(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'images', button, 'Картинки')
-
-    @discord.ui.button(label='🔴 Caps', style=discord.ButtonStyle.secondary, custom_id='am_tog_caps', row=1)
-    async def toggle_caps(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle(interaction, 'caps', button, 'Caps')
-
-    # --- Строка 2: Настройки ---
-    @discord.ui.button(label='⚙️ Спам', style=discord.ButtonStyle.primary, custom_id='am_cfg_spam', row=2)
-    async def config_spam(self, interaction: discord.Interaction, button: discord.ui.Button):
-        state = read_automod_state()
-        m = AutomodSpamModal()
-        m.spam_m.default = str(state['modules']['spam']['limit'])
-        m.spam_s.default = str(state['modules']['spam']['interval'])
-        await interaction.response.send_modal(m)
-
-    @discord.ui.button(label='⚙️ Картинки', style=discord.ButtonStyle.primary, custom_id='am_cfg_img', row=2)
-    async def config_images(self, interaction: discord.Interaction, button: discord.ui.Button):
-        state = read_automod_state()
-        m = AutomodImageModal()
-        m.img_m.default = str(state['modules']['images']['limit'])
-        m.img_s.default = str(state['modules']['images']['interval'])
-        await interaction.response.send_modal(m)
-
-    @discord.ui.button(label='⚙️ Контент', style=discord.ButtonStyle.primary, custom_id='am_cfg_cnt', row=2)
-    async def config_content(self, interaction: discord.Interaction, button: discord.ui.Button):
-        state = read_automod_state()
-        m = AutomodContentModal()
-        m.emojis.default = str(state['modules']['emoji']['limit'])
-        m.mentions.default = str(state['modules']['mentions']['limit'])
-        m.caps.default = str(state['modules']['caps']['percent'])
-        await interaction.response.send_modal(m)
-
-    @discord.ui.button(label='⚙️ Мат', style=discord.ButtonStyle.primary, custom_id='am_cfg_bw', row=2)
-    async def config_badwords(self, interaction: discord.Interaction, button: discord.ui.Button):
-        state = read_automod_state()
-        m = AutomodBadwordsModal()
-        m.words.default = ', '.join(state['modules']['badwords']['words'])
-        await interaction.response.send_modal(m)
-
-    # --- Строка 3: Наказания + Исключения ---
-    @discord.ui.button(label='⚖️ Наказания', style=discord.ButtonStyle.danger, custom_id='am_cfg_punish', row=3)
-    async def config_punishment(self, interaction: discord.Interaction, button: discord.ui.Button):
-        state = read_automod_state()
-        m = AutomodPunishModal()
-        actions = state['punishment']['actions']
-        m.w1.default = actions[0] if len(actions) > 0 else 'warn'
-        m.w2.default = actions[1] if len(actions) > 1 else 'mute'
-        m.w3.default = actions[2] if len(actions) > 2 else 'kick'
-        m.w4.default = actions[3] if len(actions) > 3 else 'ban'
-        m.mute_min.default = str(state['punishment']['mute_minutes'])
-        await interaction.response.send_modal(m)
-
-    @discord.ui.button(label='🛡️ Исключения', style=discord.ButtonStyle.secondary, custom_id='am_cfg_whitelist', row=3)
-    async def config_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
-        state = read_automod_state()
-        m = AutomodWordsModal()
-        m.whitelist_channels.default = ', '.join(str(x) for x in state.get('whitelist_channels', []))
-        m.exempt_roles.default = ', '.join(str(x) for x in state.get('exempt_roles', []))
-        await interaction.response.send_modal(m)
-
-    async def _toggle(self, interaction: discord.Interaction, key: str, button: discord.ui.Button, label: str):
-        async with bot.automod_lock:
-            state = read_automod_state()
-            state['modules'][key]['enabled'] = not state['modules'][key]['enabled']
-            write_automod_state(state)
-        is_on = state['modules'][key]['enabled']
-        button.label = f'{"🟢" if is_on else "🔴"} {label}'
-        button.style = discord.ButtonStyle.success if is_on else discord.ButtonStyle.secondary
-        await interaction.response.edit_message(view=self)
-        asyncio.create_task(refresh_automod_board_safely())
 
 # --------------- Заявка в семью (тикеты + кнопки решения) ---------------
 
@@ -1286,11 +1078,10 @@ class FamilyBot(commands.Bot):
         self.refresh_lock = asyncio.Lock()
         self.recruit_lock = asyncio.Lock()
         self.birthday_lock = asyncio.Lock()
-        self.automod_lock = asyncio.Lock()
+
         self.recruit_app_lock = asyncio.Lock()
         self.invite_cache: dict[int, dict[str, int]] = {}
-        self.spam_cache: dict[int, list[float]] = {}
-        self.image_cache: dict[int, list[float]] = {}
+
         self.stats_voice_sessions: dict[int, float] = {}
 
     async def setup_hook(self) -> None:
@@ -1347,28 +1138,7 @@ def read_birthday_state() -> dict:
 def write_birthday_state(data: dict) -> None:
     write_json(BIRTHDAY_STATE_FILE, data)
 
-def read_automod_state() -> dict:
-    state = read_json(AUTOMOD_STATE_FILE)
-    state.setdefault('modules', {
-        'spam':     {'enabled': False, 'limit': 5, 'interval': 5},
-        'badwords': {'enabled': False, 'words': []},
-        'invites':  {'enabled': False},
-        'emoji':    {'enabled': False, 'limit': 5},
-        'mentions': {'enabled': False, 'limit': 3},
-        'images':   {'enabled': False, 'limit': 3, 'interval': 10},
-        'caps':     {'enabled': False, 'percent': 70},
-    })
-    state.setdefault('punishment', {
-        'actions': ['warn', 'mute', 'kick', 'ban'],
-        'mute_minutes': 10,
-    })
-    state.setdefault('warnings', {})
-    state.setdefault('whitelist_channels', [])
-    state.setdefault('exempt_roles', [])
-    return state
 
-def write_automod_state(data: dict) -> None:
-    write_json(AUTOMOD_STATE_FILE, data)
 
 def read_app_state() -> dict:
     state = read_json(APP_STATE_FILE)
@@ -1923,77 +1693,6 @@ async def refresh_recruit_board_safely() -> None:
         asyncio.create_task(send_log('❌ Ошибка обновления рекрутов', f'```{traceback.format_exc()[-1500:]}```', color=0xEF4444))
 
 
-async def refresh_automod_board() -> None:
-    if not AUTOMOD_CHANNEL_ID: return
-    channel = await get_text_channel(AUTOMOD_CHANNEL_ID)
-    state = read_automod_state()
-    m = state['modules']
-
-    def st(key): return '🟢 ВКЛ' if m[key]['enabled'] else '🔴 ВЫКЛ'
-
-    embed = discord.Embed(title='🛡️ Автомодерация', color=0x3B82F6)
-    embed.description = '\n'.join([
-        f'**Анти-Спам** — {st("spam")}  `> {m["spam"]["limit"]} сообщ. / {m["spam"]["interval"]} сек`',
-        f'**Анти-Мат** — {st("badwords")}  `{len(m["badwords"]["words"])} слов в базе`',
-        f'**Анти-Инвайты** — {st("invites")}',
-        f'**Анти-Эмодзи** — {st("emoji")}  `> {m["emoji"]["limit"]} в сообщении`',
-        f'**Анти-Пинги** — {st("mentions")}  `> {m["mentions"]["limit"]} в сообщении`',
-        f'**Анти-Картинки** — {st("images")}  `> {m["images"]["limit"]} / {m["images"]["interval"]} сек`',
-        f'**Анти-Caps** — {st("caps")}  `> {m["caps"]["percent"]}% заглавных`',
-    ])
-
-    actions = state['punishment']['actions']
-    action_icons = {'warn': '⚠️', 'mute': '🔇', 'kick': '👢', 'ban': '🔨', 'none': '—'}
-    punish_str = ' → '.join(f'{action_icons.get(a, "")} {a}' for a in actions)
-    embed.add_field(
-        name='⚖️ Наказания (по порядку)',
-        value=f'`{punish_str}`\nМут: **{state["punishment"]["mute_minutes"]}** мин.',
-        inline=False,
-    )
-
-    wl = state.get('whitelist_channels', [])
-    er = state.get('exempt_roles', [])
-    if wl or er:
-        parts = []
-        if wl:
-            parts.append(f'Каналы: {", ".join(f"<#{c}>" for c in wl)}')
-        if er:
-            parts.append(f'Роли: {", ".join(f"<@&{r}>" for r in er)}')
-        embed.add_field(name='🛡️ Исключения', value='\n'.join(parts), inline=False)
-
-    embed.timestamp = discord.utils.utcnow()
-    embed.set_footer(text='Нажми 🟢/🔴 чтобы включить/выключить')
-
-    view = AutomodConfigView()
-    msg_id = state.get('message_id')
-    message = None
-    if msg_id:
-        try:
-            message = await channel.fetch_message(int(msg_id))
-        except Exception:
-            pass
-    if message is None:
-        try:
-            async for msg in channel.history(limit=50, oldest_first=False):
-                if msg.author == bot.user and msg.embeds and msg.embeds[0].title == embed.title:
-                    message = msg
-                    break
-        except Exception:
-            pass
-    if message is None:
-        message = await channel.send(embed=embed, view=view)
-    else:
-        await message.edit(embed=embed, view=view)
-
-    state['message_id'] = message.id
-    write_automod_state(state)
-
-async def refresh_automod_board_safely() -> None:
-    try:
-        await refresh_automod_board()
-    except Exception as exc:
-        print(f'Automod board error: {exc}')
-        asyncio.create_task(send_log('❌ Ошибка обновления Automod', f'```{traceback.format_exc()[-1500:]}```', color=0xEF4444))
 
 
 async def refresh_application_board() -> None:
@@ -2240,7 +1939,6 @@ async def on_ready() -> None:
     asyncio.create_task(refresh_report_button_message_safely())
     asyncio.create_task(refresh_birthday_board_safely())
     asyncio.create_task(auto_birthday_greeting())
-    asyncio.create_task(refresh_automod_board_safely())
     asyncio.create_task(refresh_application_board_safely())
     asyncio.create_task(refresh_recruit_app_banner_safely())
     asyncio.create_task(refresh_admin_panel_safely())
@@ -2277,234 +1975,12 @@ async def on_member_join(member: discord.Member) -> None:
 
 
 
-async def _purge_user_messages(channel: discord.TextChannel, user_id: int, seconds: int, only_images: bool = False) -> int:
-    """Собирает и удаляет все сообщения пользователя за N секунд."""
-    cutoff = discord.utils.utcnow() - timedelta(seconds=seconds)
-    ids_to_delete = []
-    try:
-        async for msg in channel.history(limit=200, oldest_first=False):
-            if msg.created_at < cutoff:
-                break
-            if msg.author.id == user_id and not msg.pinned:
-                if only_images and not msg.attachments:
-                    continue
-                ids_to_delete.append(msg.id)
-    except Exception as exc:
-        print(f'[AUTOMOD] History scan error: {exc}')
-        return 0
-
-    if not ids_to_delete:
-        return 0
-
-    deleted = 0
-    # Пробуем bulk delete
-    for i in range(0, len(ids_to_delete), 100):
-        batch = ids_to_delete[i:i+100]
-        try:
-            await channel.delete_messages([discord.Object(id=mid) for mid in batch])
-            deleted += len(batch)
-        except discord.Forbidden:
-            # Нет права Manage Messages — пробуем по одному (только свои)
-            print(f'[AUTOMOD] No Manage Messages permission — cannot delete other users messages')
-            break
-        except discord.HTTPException as exc:
-            print(f'[AUTOMOD] Bulk delete failed: {exc}')
-            # Fallback: удаление сообщений старше 14 дней не работает через bulk
-            # Пробуем по одному
-            for mid in batch:
-                try:
-                    await channel.delete_message(discord.Object(id=mid))
-                    deleted += 1
-                except discord.Forbidden:
-                    pass
-                except discord.HTTPException:
-                    pass
-    return deleted
-
-
-async def _automod_punish(message: discord.Message, module: str, reason: str, state: dict) -> None:
-    """Система наказаний как в Dyno: warn → mute → kick → ban."""
-    uid = str(message.author.id)
-    actions = state['punishment']['actions']
-    mute_min = state['punishment']['mute_minutes']
-
-    # Админы — только лог + warn, без жёстких наказаний
-    is_admin = isinstance(message.author, discord.Member) and message.author.guild_permissions.manage_guild
-
-    async with bot.automod_lock:
-        state = read_automod_state()
-        count = state['warnings'].get(uid, 0)
-        new_count = count + 1
-        state['warnings'][uid] = new_count
-        write_automod_state(state)
-
-    action_idx = min(new_count - 1, len(actions) - 1)
-    action = actions[action_idx]
-
-    module_labels = {
-        'spam': '⚠️ Анти-Спам',
-        'badwords': '🤬 Анти-Мат',
-        'invites': '🔗 Анти-Инвайты',
-        'emoji': '😀 Анти-Эмодзи',
-        'mentions': '📢 Анти-Пинги',
-        'images': '🖼️ Анти-Картинки',
-        'caps': '🔠 Анти-Caps',
-    }
-
-    # Админы — только warn + лог, без мута/кика/бана
-    if is_admin:
-        action = 'warn'
-
-    result_msg = ''
-
-    if action == 'warn':
-        suffix = ' — админ' if is_admin else ''
-        result_msg = f'{message.author.mention}, предупреждение **{new_count}** ({reason}){suffix}'
-    elif action == 'mute':
-        until = discord.utils.utcnow() + timedelta(minutes=mute_min)
-        try:
-            await message.author.timeout(until, reason=f'Автомод: {module} — {reason}')
-            result_msg = f'{message.author.mention}, **МУТ на {mute_min} мин** ({reason})'
-            async with bot.automod_lock:
-                state = read_automod_state()
-                state['warnings'][uid] = 0
-                write_automod_state(state)
-        except (discord.Forbidden, discord.HTTPException):
-            result_msg = f'{message.author.mention}, попытка мута не удалась — нет прав'
-    elif action == 'kick':
-        try:
-            await message.author.kick(reason=f'Автомод: {module} — {reason}')
-            result_msg = f'{message.author.mention} **кикнут** ({reason})'
-            async with bot.automod_lock:
-                state = read_automod_state()
-                state['warnings'][uid] = 0
-                write_automod_state(state)
-        except (discord.Forbidden, discord.HTTPException):
-            result_msg = f'{message.author.mention}, попытка кика не удалась — нет прав'
-    elif action == 'ban':
-        try:
-            await message.author.ban(reason=f'Автомод: {module} — {reason}')
-            result_msg = f'{message.author.mention} **забанен** ({reason})'
-            async with bot.automod_lock:
-                state = read_automod_state()
-                state['warnings'][uid] = 0
-                write_automod_state(state)
-        except (discord.Forbidden, discord.HTTPException):
-            result_msg = f'{message.author.mention}, попытка бана не удалась — нет прав'
-    elif action == 'none':
-        pass
-
-    if result_msg:
-        try:
-            await message.channel.send(result_msg, delete_after=10)
-        except (discord.Forbidden, discord.NotFound):
-            pass
-
-    asyncio.create_task(send_log(
-        module_labels.get(module, '🛡️ Автомод'),
-        fields=[
-            ('Участник', _log_user_field(message.author), True),
-            ('Канал', _log_channel_field(message.channel), True),
-            ('Нарушение', f'**{new_count}** — {action}', True),
-            ('Причина', reason, False),
-            ('Статус', '👑 Админ (только warn)' if is_admin else '👤 Участник', True),
-        ],
-        color=0xEF4444, user=message.author,
-    ))
 
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
     if message.author.bot or message.guild is None:
         return
-
-    state = read_automod_state()
-    m = state['modules']
-    is_admin = isinstance(message.author, discord.Member) and message.author.guild_permissions.manage_guild
-
-    # Проверка исключений (каналы и роли)
-    if message.channel.id in state.get('whitelist_channels', []):
-        await bot.process_commands(message)
-        return
-    if isinstance(message.author, discord.Member):
-        user_role_ids = {r.id for r in message.author.roles}
-        if user_role_ids & set(state.get('exempt_roles', [])):
-            await bot.process_commands(message)
-            return
-
-    violations = []
-
-    # --- 1. Анти-Мат (по словам) ---
-    if m['badwords']['enabled'] and m['badwords']['words']:
-        msg_words = set(re.findall(r'[\w\u0400-\u04FF]+', message.content.lower()))
-        bad_found = msg_words & set(m['badwords']['words'])
-        if bad_found:
-            violations.append(('badwords', f'Запрещённые слова: {", ".join(bad_found)}'))
-
-    # --- 2. Анти-Инвайты ---
-    if not violations and m['invites']['enabled']:
-        if re.search(r'(discord\.gg/|discord\.com/invite/|discordapp\.com/invite/)', message.content, re.I):
-            violations.append(('invites', 'Ссылка-инвайт'))
-
-    # --- 3. Анти-Эмодзи ---
-    if not violations and m['emoji']['enabled']:
-        emoji_count = len(re.findall(r'<a?:[^:]+:[0-9]+>', message.content)) + len(re.findall(r'[\U00010000-\U0010ffff]', message.content))
-        if emoji_count > m['emoji']['limit']:
-            violations.append(('emoji', f'{emoji_count} эмодзи (лимит {m["emoji"]["limit"]})'))
-
-    # --- 4. Анти-Пинги ---
-    if not violations and m['mentions']['enabled']:
-        mention_count = len(message.mentions) + len(message.role_mentions) + (1 if '@everyone' in message.content or '@here' in message.content else 0)
-        if mention_count > m['mentions']['limit']:
-            violations.append(('mentions', f'{mention_count} упоминаний (лимит {m["mentions"]["limit"]})'))
-
-    # --- 5. Анти-Caps ---
-    if not violations and m['caps']['enabled']:
-        alpha = [c for c in message.content if c.isalpha()]
-        if len(alpha) >= 10:
-            upper = sum(1 for c in alpha if c.isupper())
-            pct = (upper / len(alpha)) * 100
-            if pct > m['caps']['percent']:
-                violations.append(('caps', f'{pct:.0f}% заглавных (лимит {m["caps"]["percent"]}%)'))
-
-    # --- 6. Анти-Картинки (пакетная очистка) ---
-    if not violations and m['images']['enabled'] and message.attachments:
-        uid = message.author.id
-        now = discord.utils.utcnow().timestamp()
-        timestamps = bot.image_cache.get(uid, [])
-        timestamps = [t for t in timestamps if now - t <= m['images']['interval']]
-        timestamps.extend([now] * len(message.attachments))
-        bot.image_cache[uid] = timestamps
-        if len(timestamps) > m['images']['limit']:
-            deleted = await _purge_user_messages(message.channel, uid, m['images']['interval'] + 30, only_images=True)
-            bot.image_cache[uid] = []
-            await _automod_punish(message, 'images', f'Спам картинками (удалено {deleted})', state)
-            await bot.process_commands(message)
-            return
-
-    # --- 7. Анти-Спам (пакетная очистка) ---
-    if not violations and m['spam']['enabled']:
-        uid = message.author.id
-        now = discord.utils.utcnow().timestamp()
-        timestamps = bot.spam_cache.get(uid, [])
-        timestamps = [t for t in timestamps if now - t <= m['spam']['interval']]
-        timestamps.append(now)
-        bot.spam_cache[uid] = timestamps
-        if len(timestamps) > m['spam']['limit']:
-            deleted = await _purge_user_messages(message.channel, uid, m['spam']['interval'] + 30)
-            bot.spam_cache[uid] = []
-            await _automod_punish(message, 'spam', f'Спам (удалено {deleted})', state)
-            await bot.process_commands(message)
-            return
-
-    # --- Обработка остальных нарушений ---
-    if violations:
-        vtype, vdesc = violations[0]
-        try:
-            await message.delete()
-        except (discord.Forbidden, discord.NotFound):
-            pass
-        await _automod_punish(message, vtype, vdesc, state)
 
     await bot.process_commands(message)
 
@@ -2889,7 +2365,6 @@ async def auto_refresh() -> None:
     await refresh_recruit_board_safely()
     await refresh_report_button_message_safely()
     await refresh_birthday_board_safely()
-    await refresh_automod_board_safely()
     await refresh_application_board_safely()
     await refresh_recruit_app_banner_safely()
     await refresh_admin_panel_safely()
@@ -3468,7 +2943,7 @@ class ScheduleModal(discord.ui.Modal, title='⏰ Запланировать со
             'created_at': now.isoformat(),
         }
 
-        async with bot.automod_lock:
+        async with bot.refresh_lock:
             state = read_schedule_state()
             state['scheduled'].append(entry)
             write_schedule_state(state)
@@ -3587,7 +3062,7 @@ class ScheduleCancelSelect(discord.ui.Select):
             return
 
         removed = scheduled.pop(idx)
-        async with bot.automod_lock:
+        async with bot.refresh_lock:
             state['scheduled'] = scheduled
             write_schedule_state(state)
 
@@ -3674,7 +3149,7 @@ async def setrules_cmd(interaction: discord.Interaction, rules: str) -> None:
     # Нумеруем правила
     numbered = [f'{i+1}. {r}' for i, r in enumerate(rules_list)]
 
-    async with bot.automod_lock:
+    async with bot.refresh_lock:
         state = read_rules_state()
         state['rules'] = numbered
         write_rules_state(state)
